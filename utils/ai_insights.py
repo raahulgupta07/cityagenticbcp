@@ -203,58 +203,58 @@ def _run_generation_streaming(pending):
     data_date = _get_latest_data_date()
     completed = 0
 
+    progress = st.progress(0, text="🧠 Starting analysis...")
+
     for i, item in enumerate(pending):
         label = item.get("context", item.get("page_name", ""))[:60]
+        progress.progress((i) / len(pending), text=f"🧠 {i+1}/{len(pending)}: {label}...")
 
-        with st.status(f"🧠 Analyzing {i+1}/{len(pending)}: {label}...", expanded=True) as status:
-            try:
-                if item["type"] == "insight":
-                    result = _gen_deep_insight(item["context"], item["data"])
-                elif item["type"] == "summary":
-                    result = _gen_deep_summary(item["page_name"], item["kpi_data"], item.get("charts_data"))
-                elif item["type"] == "forecast":
-                    result = _gen_deep_forecast(item["model_name"], item["forecast_data"])
-                else:
-                    result = None
+        try:
+            if item["type"] == "insight":
+                result = _gen_deep_insight(item["context"], item["data"])
+            elif item["type"] == "summary":
+                result = _gen_deep_summary(item["page_name"], item["kpi_data"], item.get("charts_data"))
+            elif item["type"] == "forecast":
+                result = _gen_deep_forecast(item["model_name"], item["forecast_data"])
+            else:
+                result = None
 
-                if result:
-                    _save_cache(item["cache_key"], item["type"], result, data_date)
-                    st.markdown(result)
-                    status.update(label=f"✅ {i+1}/{len(pending)}: {label}", state="complete", expanded=False)
-                    completed += 1
-                else:
-                    status.update(label=f"⚠️ {i+1}/{len(pending)}: No result", state="error", expanded=False)
-            except Exception as e:
-                status.update(label=f"❌ {i+1}/{len(pending)}: Error", state="error", expanded=False)
+            if result:
+                _save_cache(item["cache_key"], item["type"], result, data_date)
+                st.markdown(f"✅ **{i+1}/{len(pending)}:** {label}")
+                completed += 1
+        except Exception:
+            pass
+
+    progress.progress(1.0, text="Done!")
 
     if completed > 0:
-        st.success(f"✅ {completed} insights generated! Click below to see them in place.")
-        if st.button("🔄 Refresh Page", key="btn_refresh_after"):
-            st.rerun()
+        st.success(f"✅ {completed} insights generated!")
+        st.rerun()
 
 
 # ─── Deep Analysis Generators ───────────────────────────────────────────
 
 def _gen_deep_insight(context, data):
     data_str = _prepare_data(data)
-    return _generate(f"""You are a senior BCP analyst. Analyze this data deeply.
+    return _generate(f"""You are a senior BCP analyst. Analyze this data for non-technical managers.
 
 CONTEXT: {context}
 
-FULL DATA:
+DATA:
 {data_str}
 
-Provide analysis in this format:
+Write 4 short paragraphs (NO markdown headers, NO # symbols, just bold text):
 
-**Key Finding:** Most important pattern. Compare highs vs lows. Name specific sites and numbers.
+**Key Finding:** Most important pattern with specific numbers and site names.
 
-**Risk Assessment:** What's dangerous? Which sites/generators at risk? Quantify with numbers.
+**Risk:** What's dangerous? Quantify with numbers.
 
-**Root Cause:** Why might this be happening?
+**Why:** Root cause in one sentence.
 
-**Action Required:** Exactly what should be done, by whom, by when? Be specific — "Deliver 500L to CMZWN by tomorrow" not "increase fuel."
+**Do This Now:** Specific action — "Deliver 500L to CMZWN by tomorrow" not vague advice.
 
-Use actual numbers from the data. Name sites. Be direct.""", 500)
+Keep it under 150 words total. No headers. No bullet lists longer than 3 items.""", 400)
 
 
 def _gen_deep_summary(page_name, kpi_data, charts_data):
