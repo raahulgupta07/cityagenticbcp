@@ -14,12 +14,13 @@ from utils.smart_table import render_smart_table
 from utils.ai_insights import render_insight_panel, render_page_summary
 from config.settings import SECTORS
 
+from utils.page_header import render_page_header
 from utils.auth import require_login, render_sidebar_user
 st.set_page_config(page_title="Site Detail", page_icon="🏢", layout="wide")
 require_login()
 render_sidebar_user()
 
-st.title("🏢 Site Detail")
+render_page_header("🏢", "Site Detail", "Deep dive into individual site generators, fuel usage, and tank balance")
 
 ui.alert(
     title="🏢 Site Detail",
@@ -92,11 +93,11 @@ if not sector_sites:
     st.info(f"No sites found for {selected_sector}.")
     st.stop()
 
-# ─── Site selection via tabs ─────────────────────────────────────────────────
-selected_site = ui.tabs(
-    options=sector_sites,
-    default_value=sector_sites[0],
-    key=f"site_tabs_{selected_sector}",
+# ─── Site selection (dropdown for many sites, works better than 30 tabs) ─────
+selected_site = st.selectbox(
+    f"Select Site ({len(sector_sites)} sites in {selected_sector})",
+    sector_sites,
+    key=f"site_select_{selected_sector}",
 )
 
 tab_key = f"{selected_sector}_{selected_site}"

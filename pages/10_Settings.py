@@ -10,6 +10,7 @@ import streamlit as st
 import streamlit_shadcn_ui as ui
 import pandas as pd
 from utils.database import get_db, get_setting, set_setting
+from utils.page_header import render_page_header
 from utils.auth import (
     require_login, require_role, has_permission, get_current_user,
     render_sidebar_user, ROLES, create_user, list_users, update_user, delete_user,
@@ -33,7 +34,7 @@ if not is_admin:
     st.error("Access denied. Admin or Super Admin role required.")
     st.stop()
 
-st.title("⚙️ Settings")
+render_page_header("⚙️", "Settings", "User management, email configuration, and system settings")
 
 # Tabs based on role
 if is_super:

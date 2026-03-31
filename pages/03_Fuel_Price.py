@@ -16,12 +16,13 @@ from utils.ai_insights import render_insight_panel, render_page_summary, render_
 from models.fuel_price_forecast import forecast_fuel_price
 from config.settings import SECTORS
 
+from utils.page_header import render_page_header
 from utils.auth import require_login, render_sidebar_user
 st.set_page_config(page_title="Fuel Price Intelligence", page_icon="⛽", layout="wide")
 require_login()
 render_sidebar_user()
 
-st.title("⛽ Fuel Price Intelligence")
+render_page_header("⛽", "Fuel Price Intelligence", "Diesel purchase prices, supplier comparison, and 7-day price forecast")
 
 ui.alert(
     title="⛽ Fuel Price Intelligence",

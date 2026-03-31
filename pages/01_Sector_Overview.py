@@ -19,12 +19,13 @@ from models.buffer_predictor import predict_buffer_depletion, get_critical_sites
 from config.settings import SECTORS, ALERTS
 
 
+from utils.page_header import render_page_header
 from utils.auth import require_login, render_sidebar_user
 st.set_page_config(page_title="Sector Overview", page_icon="📊", layout="wide")
 require_login()
 render_sidebar_user()
 
-st.title("📊 Sector Overview")
+render_page_header("📊", "Sector Overview", "Compare CP, CMHL, CFC — fuel consumption, buffer days, site health")
 
 ui.alert(
     title="📊 Sector Overview",

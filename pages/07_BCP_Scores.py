@@ -20,12 +20,13 @@ from models.fuel_price_forecast import forecast_fuel_price
 from models.efficiency_scorer import get_fleet_efficiency_summary, get_anomalies
 from alerts.alert_engine import run_all_checks, get_active_alerts
 
+from utils.page_header import render_page_header
 from utils.auth import require_login, render_sidebar_user
 st.set_page_config(page_title="BCP Command Center", page_icon="🛡️", layout="wide")
 require_login()
 render_sidebar_user()
 
-st.title("🛡️ BCP Command Center")
+render_page_header("🛡️", "BCP Command Center", "Complete risk overview — scores, forecasts, alerts across all sectors")
 
 ui.alert(
     title="🛡️ Complete Business Continuity Overview",

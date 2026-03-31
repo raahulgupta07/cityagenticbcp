@@ -11,6 +11,7 @@ import pandas as pd
 from utils.database import get_db
 from utils.smart_table import render_smart_table
 from utils.ai_insights import render_insight_panel, render_page_summary, finish_page
+from utils.page_header import render_page_header
 from utils.auth import require_login, render_sidebar_user
 from config.settings import SECTORS, ALERTS
 
@@ -56,7 +57,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 AI Insights Hub")
+render_page_header("🧠", "AI Insights Hub", "AI-powered analysis, chat agent, and system alerts")
 
 # ─── Load Data ───────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
