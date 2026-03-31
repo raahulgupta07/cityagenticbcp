@@ -10,6 +10,7 @@ import streamlit_shadcn_ui as ui
 import pandas as pd
 from utils.database import get_db
 from utils.charts import (
+from utils.auth import require_login, render_sidebar_user
     stacked_bar_by_sector, buffer_trend_with_thresholds,
     horizontal_bar, bar_chart, STATUS_COLORS, apply_layout,
 )
@@ -270,5 +271,4 @@ except Exception as e:
 
 # ─── AI Insights Button ────────────────────────────────────────────────────
 from utils.ai_insights import finish_page
-from utils.auth import require_login, render_sidebar_user
 finish_page()

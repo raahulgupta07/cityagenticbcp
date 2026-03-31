@@ -36,7 +36,7 @@ ui.alert(
 )
 
 selected = ui.tabs(
-    options=["📁 Upload Files", "🧹 How AI Cleans Data", "✏️ Quick Edit", "📋 History"],
+    options=["📁 Upload Files", "🗄️ Raw Data", "🧹 How AI Cleans Data", "✏️ Quick Edit", "📋 History"],
     default_value="📁 Upload Files",
     key="entry_tabs",
 )
@@ -325,7 +325,40 @@ if selected == "📁 Upload Files":
             st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TAB 2: How AI Cleans Data
+# TAB: Raw Data Browser
+# ═══════════════════════════════════════════════════════════════════════════
+elif selected == "🗄️ Raw Data":
+    st.markdown("### Database Tables")
+    st.caption("Browse all data stored in the system")
+
+    TABLE_CONFIG = {
+        "Sites": ("SELECT s.site_id, s.sector_id, s.site_type, s.site_name FROM sites s ORDER BY s.sector_id, s.site_id", "57 sites across 3 sectors"),
+        "Generators": ("SELECT g.site_id, s.sector_id, g.model_name, g.power_kva, g.consumption_per_hour, g.fuel_type, g.supplier FROM generators g JOIN sites s ON g.site_id = s.site_id ORDER BY s.sector_id, g.site_id", "All generator models with KVA and consumption"),
+        "Daily Ops": ("SELECT do.date, do.site_id, g.model_name, do.gen_run_hr, do.daily_used_liters, do.spare_tank_balance, do.blackout_hr, do.source FROM daily_operations do JOIN generators g ON do.generator_id = g.generator_id ORDER BY do.date DESC, do.site_id LIMIT 500", "Per-generator per-day operations"),
+        "Site Summary": ("SELECT dss.date, dss.site_id, s.sector_id, dss.total_gen_run_hr, dss.total_daily_used, dss.spare_tank_balance, dss.days_of_buffer FROM daily_site_summary dss JOIN sites s ON dss.site_id = s.site_id ORDER BY dss.date DESC LIMIT 500", "Aggregated per-site: buffer days calculation"),
+        "Fuel Prices": ("SELECT date, sector_id, region, supplier, fuel_type, quantity_liters, price_per_liter FROM fuel_purchases ORDER BY date DESC LIMIT 200", "Diesel purchase prices from suppliers"),
+        "Alerts": ("SELECT alert_type, severity, site_id, sector_id, message, is_acknowledged, created_at FROM alerts ORDER BY created_at DESC LIMIT 200", "Auto-generated threshold alerts"),
+        "Uploads": ("SELECT filename, file_type, sector_id, rows_parsed, rows_accepted, rows_rejected, uploaded_at FROM upload_history ORDER BY uploaded_at DESC", "File upload audit trail"),
+    }
+
+    table_selected = st.selectbox("Table", list(TABLE_CONFIG.keys()), key="raw_table")
+    query, desc = TABLE_CONFIG[table_selected]
+    st.caption(desc)
+
+    search = st.text_input("Search / filter", key="raw_search", placeholder="Type to filter rows...")
+
+    with get_db() as conn:
+        df = pd.read_sql_query(query, conn)
+
+    if search:
+        mask = df.astype(str).apply(lambda row: row.str.contains(search, case=False).any(), axis=1)
+        df = df[mask]
+
+    ui.metric_card(title=table_selected, content=str(len(df)), description="rows", key="mc_raw_count")
+    st.dataframe(df, use_container_width=True, hide_index=True, height=400)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TAB: How AI Cleans Data
 # ═══════════════════════════════════════════════════════════════════════════
 elif selected == "🧹 How AI Cleans Data":
     st.markdown("### How the System Handles Messy Excel Data")

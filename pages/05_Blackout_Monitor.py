@@ -14,6 +14,7 @@ from utils.smart_table import render_smart_table
 from utils.ai_insights import render_insight_panel, render_page_summary
 from config.settings import SECTORS, ALERTS
 
+from utils.auth import require_login, render_sidebar_user
 st.set_page_config(page_title="Power Backup Monitor", page_icon="⚡", layout="wide")
 require_login()
 render_sidebar_user()
@@ -275,5 +276,4 @@ if not warnings_df.empty:
 
 # ─── AI Insights Button ────────────────────────────────────────────────────
 from utils.ai_insights import finish_page
-from utils.auth import require_login, render_sidebar_user
 finish_page()
