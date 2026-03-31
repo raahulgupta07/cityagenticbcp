@@ -1,0 +1,16 @@
+services:
+  citybcp:
+    build: .
+    container_name: city-bcp-agent
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - bcp-data:/app/data
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+
+volumes:
+  bcp-data:
