@@ -1,5 +1,6 @@
 """
 Authentication & Authorization — Role-based access control.
+Session persists across browser refreshes via DB-stored token + cookie.
 
 Roles:
   super_admin — Full access: settings, user management, upload, analysis, view
@@ -8,7 +9,8 @@ Roles:
 """
 import streamlit as st
 import hashlib
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from utils.database import get_db
 
 # ─── Role Definitions ────────────────────────────────────────────────────────
@@ -65,11 +67,83 @@ def verify_password(password, password_hash):
     return hash_password(password) == password_hash
 
 
-# ─── Session Management ─────────────────────────────────────────────────────
+# ─── Session Token Management (survives browser refresh) ─────────────────────
+
+def _create_session_token(user_id):
+    """Create a session token, store in DB, return token string."""
+    token = secrets.token_hex(32)
+    expires = (datetime.now() + timedelta(hours=24)).isoformat()
+    with get_db() as conn:
+        # Create sessions table if not exists
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        # Clean expired sessions
+        conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+        # Insert new session
+        conn.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+                     (token, user_id, expires))
+    return token
+
+
+def _validate_session_token(token):
+    """Check if token is valid and not expired. Returns user dict or None."""
+    if not token:
+        return None
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        row = conn.execute("""
+            SELECT u.* FROM sessions s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+        """, (token,)).fetchone()
+    if row:
+        return {
+            "id": row["id"], "username": row["username"],
+            "display_name": row["display_name"], "email": row["email"],
+            "role": row["role"], "sectors": row["sectors"],
+        }
+    return None
+
+
+def _delete_session_token(token):
+    """Remove session token from DB."""
+    if token:
+        with get_db() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER, expires_at TEXT, created_at TEXT)")
+            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
 
 def get_current_user():
-    """Get current logged-in user from session state."""
-    return st.session_state.get("user", None)
+    """Get current logged-in user. Checks session state first, then cookie/query param."""
+    # 1. Check session state (fastest)
+    if "user" in st.session_state and st.session_state["user"]:
+        return st.session_state["user"]
+
+    # 2. Check query param token (survives refresh)
+    token = st.query_params.get("session", None)
+    if token:
+        user = _validate_session_token(token)
+        if user:
+            st.session_state["user"] = user
+            return user
+        else:
+            # Token expired or invalid — clear it
+            st.query_params.clear()
+
+    return None
 
 
 def is_logged_in():
@@ -128,7 +202,10 @@ def require_role(min_role):
 
 
 def logout():
+    token = st.query_params.get("session", None)
+    _delete_session_token(token)
     st.session_state.pop("user", None)
+    st.query_params.clear()
 
 
 # ─── Login Form ──────────────────────────────────────────────────────────────
@@ -190,6 +267,8 @@ def _show_login_form():
             user = authenticate(username, password)
             if user:
                 st.session_state["user"] = user
+                token = _create_session_token(user["id"])
+                st.query_params["session"] = token
                 with get_db() as conn:
                     conn.execute("UPDATE users SET last_login = datetime('now') WHERE id = ?",
                                  (user["id"],))
