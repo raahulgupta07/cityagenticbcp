@@ -217,33 +217,64 @@ def render_sector_content(sector_filter, tab_key):
 render_sector_content(sector_filter, tab_key)
 
 # ─── Forecasting: Next Week Projection ──────────────────────────────────────
+from utils.kpi_card import render_kpi, render_chart_source
+from datetime import datetime, timedelta
+
 st.markdown("---")
-st.markdown("## Next Week Projection")
-st.caption("Using recent fuel consumption trends, this section predicts which sites may run out of fuel in the next 7 days. Sites listed here should be prioritized for resupply.")
+
+# Calculate projection dates
+today = datetime.now()
+next_week_start = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+next_week_end = (today + timedelta(days=7)).strftime("%Y-%m-%d")
+
+st.markdown(f"## Next Week Projection ({next_week_start} → {next_week_end})")
+st.caption(f"Predicting fuel depletion for the next 7 days based on exponential smoothing of recent consumption. Today: {today.strftime('%Y-%m-%d')}")
 
 try:
     critical_sites_df = get_critical_sites(threshold_days=7)
+    all_predictions = predict_buffer_depletion()
+
     if not critical_sites_df.empty:
-        st.markdown("### Sites Projected to Run Low Within 7 Days")
+        st.markdown(f"### ⚠️ {len(critical_sites_df)} Sites Projected to Run Low by {next_week_end}")
+
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            render_kpi("Critical Sites", str(len(critical_sites_df)),
+                       "Count of sites where (Tank Balance ÷ Smoothed Daily Usage) < 7 days",
+                       f"Model: Exponential smoothing (α=0.3) on daily_site_summary | Projection: {next_week_start} to {next_week_end}",
+                       "kpi_fc_critical")
+        with fc2:
+            earliest = critical_sites_df["projected_stockout_date"].min() if "projected_stockout_date" in critical_sites_df.columns else "N/A"
+            render_kpi("Earliest Stockout", str(earliest),
+                       "Projected date when first site reaches 0L = Tank Balance ÷ Smoothed Daily Usage",
+                       "Model: buffer_predictor.py exponential smoothing",
+                       "kpi_fc_earliest")
+        with fc3:
+            total_needed = 0
+            if not critical_sites_df.empty and "current_balance" in critical_sites_df.columns and "smoothed_daily_used" in critical_sites_df.columns:
+                total_needed = ((7 * critical_sites_df["smoothed_daily_used"]) - critical_sites_df["current_balance"]).clip(lower=0).sum()
+            render_kpi("Fuel Needed", f"{total_needed:,.0f} L",
+                       "(7 × Smoothed Daily Usage - Current Balance) for each critical site, summed",
+                       "To bring all critical sites to 7-day buffer",
+                       "kpi_fc_needed")
+
         display_cols = ["site_id", "sector_id", "current_balance", "smoothed_daily_used",
                         "days_until_stockout", "projected_stockout_date", "trend", "confidence"]
         avail_cols = [c for c in display_cols if c in critical_sites_df.columns]
         crit_display = critical_sites_df[avail_cols].copy()
         crit_display.columns = [c.replace("_", " ").title() for c in avail_cols]
         render_smart_table(crit_display, title="Critical Sites Forecast")
-        render_insight_panel(
-            "Sites projected to deplete fuel buffer within 7 days",
-            crit_display,
-            "forecast_critical_sites",
-        )
+        render_chart_source("Critical Sites Forecast",
+                            "Exponential smoothing (α=0.3) on daily_site_summary.total_daily_used, projected against spare_tank_balance",
+                            "Tables: daily_site_summary, sites | Model: models/buffer_predictor.py",
+                            f"{date_start} to {date_end} → projected to {next_week_end}")
+        render_insight_panel("Sites projected to deplete fuel buffer within 7 days", crit_display, "forecast_critical_sites")
     else:
-        st.success("No sites are projected to run out of fuel within the next 7 days.")
+        st.success(f"✅ No sites projected to run out of fuel by {next_week_end}.")
 
-    # Full buffer prediction overview
-    all_predictions = predict_buffer_depletion()
+    # Sector overview
     if not all_predictions.empty:
         st.markdown("### Buffer Depletion Forecast by Sector")
-        st.caption("Average projected days until fuel runs out, grouped by sector. Lower bars mean the sector needs fuel sooner.")
         sector_forecast = all_predictions.groupby("sector_id", as_index=False).agg(
             avg_days=("days_until_stockout", "mean"),
             min_days=("days_until_stockout", "min"),
@@ -253,19 +284,16 @@ try:
             fig_fc = bar_chart(sector_forecast, "sector_id", "avg_days",
                                title="Avg Projected Days Until Stockout by Sector")
             st.plotly_chart(fig_fc, use_container_width=True, key="forecast_sector_bar")
-            render_insight_panel(
-                "Buffer depletion forecast by sector",
-                sector_forecast,
-                "forecast_sector_overview",
-            )
-            render_forecast_insight(
-                "Buffer Predictor",
-                {
-                    "sectors": sector_forecast.to_dict(orient="records"),
-                    "critical_count": len(critical_sites_df) if not critical_sites_df.empty else 0,
-                },
-                "buffer_forecast_summary",
-            )
+            render_chart_source("Sector Stockout Forecast",
+                                "AVG(Tank Balance ÷ Smoothed Daily Usage) grouped by sector",
+                                "Model: buffer_predictor.py → daily_site_summary",
+                                f"Projected from {date_end}")
+            render_insight_panel("Buffer depletion forecast by sector", sector_forecast, "forecast_sector_overview")
+            render_forecast_insight("Buffer Predictor", {
+                "projection_period": f"{next_week_start} to {next_week_end}",
+                "sectors": sector_forecast.to_dict(orient="records"),
+                "critical_count": len(critical_sites_df) if not critical_sites_df.empty else 0,
+            }, "buffer_forecast_summary")
 
 except Exception as e:
     st.warning(f"Forecast model could not run: {e}")

@@ -442,9 +442,13 @@ def get_load_optimization():
     )
 
     # Calculate potential savings
+    multi["savings_per_hour_liters"] = 0.0
     for site_id in multi["site_id"].unique():
         site_gens = multi[multi["site_id"] == site_id]
-        best = site_gens[site_gens["rank"] == 1].iloc[0]["consumption_per_hour"]
+        rank1 = site_gens[site_gens["rank"] == 1]
+        if rank1.empty:
+            continue
+        best = rank1.iloc[0]["consumption_per_hour"]
         worst = site_gens["consumption_per_hour"].max()
         savings = worst - best
         multi.loc[multi["site_id"] == site_id, "savings_per_hour_liters"] = round(savings, 1)

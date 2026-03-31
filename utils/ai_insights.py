@@ -58,8 +58,11 @@ def _get_latest_data_date():
 
 # ─── Pending Queue ───────────────────────────────────────────────────────
 
-if "_pending_insights" not in st.session_state:
-    st.session_state["_pending_insights"] = []
+def _ensure_pending():
+    if "_pending_insights" not in st.session_state:
+        st.session_state["_pending_insights"] = []
+
+_ensure_pending()
 
 
 # ─── LLM Call ────────────────────────────────────────────────────────────
@@ -116,6 +119,7 @@ def render_insight_panel(context, data, key):
     if text:
         _show_insight(text, generated_at)
     else:
+        _ensure_pending()
         st.session_state["_pending_insights"].append({
             "cache_key": cache_key, "context": context,
             "data": data, "type": "insight",
@@ -129,6 +133,7 @@ def render_page_summary(page_name, kpi_data, charts_data=None):
     if text:
         _show_summary(text, generated_at)
     else:
+        _ensure_pending()
         st.session_state["_pending_insights"].append({
             "cache_key": cache_key, "kpi_data": kpi_data,
             "charts_data": charts_data, "page_name": page_name,
@@ -143,6 +148,7 @@ def render_forecast_insight(model_name, forecast_data, key):
     if text:
         _show_forecast(text, generated_at)
     else:
+        _ensure_pending()
         st.session_state["_pending_insights"].append({
             "cache_key": cache_key, "model_name": model_name,
             "forecast_data": forecast_data, "type": "forecast",
@@ -154,6 +160,7 @@ def finish_page():
     Call at END of every page.
     Shows data timestamp + Generate button + Refresh button.
     """
+    _ensure_pending()
     pending = [p for p in st.session_state.get("_pending_insights", [])
                if _get_cached(p["cache_key"])[0] is None]
     st.session_state["_pending_insights"] = []
@@ -169,12 +176,12 @@ def finish_page():
 
     col1, col2 = st.columns(2)
 
-    # Generate new insights (for uncached)
+    # Generate new insights (for uncached) — streams one by one
     with col1:
         if pending:
             if st.button(f"🧠 Generate AI Analysis ({len(pending)} sections)", key="btn_ai_gen",
                          type="primary", use_container_width=True):
-                _run_generation(pending)
+                _run_generation_streaming(pending)
         else:
             st.success("✅ All AI insights are up to date.")
 
@@ -182,39 +189,48 @@ def finish_page():
     with col2:
         if st.button("🔄 Refresh All Analysis (new data)", key="btn_ai_refresh",
                      use_container_width=True):
-            # Delete all cached insights for this page
             with get_db() as conn:
                 conn.execute("DELETE FROM ai_insights_cache")
-            st.session_state.clear()
+            # Clear only insight-related keys, keep auth/user session
+            keys_to_remove = [k for k in st.session_state if k.startswith(("ai_", "summary_", "fc_", "_pending"))]
+            for k in keys_to_remove:
+                del st.session_state[k]
             st.rerun()
 
 
-def _run_generation(pending):
-    """Generate all pending insights with progress bar."""
+def _run_generation_streaming(pending):
+    """Generate insights one-by-one, showing each result as it completes."""
     data_date = _get_latest_data_date()
-    progress = st.progress(0, text="🧠 Analyzing data...")
+    completed = 0
 
     for i, item in enumerate(pending):
         label = item.get("context", item.get("page_name", ""))[:60]
-        progress.progress((i + 1) / len(pending), text=f"🧠 Analyzing: {label}...")
 
-        try:
-            if item["type"] == "insight":
-                result = _gen_deep_insight(item["context"], item["data"])
-            elif item["type"] == "summary":
-                result = _gen_deep_summary(item["page_name"], item["kpi_data"], item.get("charts_data"))
-            elif item["type"] == "forecast":
-                result = _gen_deep_forecast(item["model_name"], item["forecast_data"])
-            else:
-                result = None
+        with st.status(f"🧠 Analyzing {i+1}/{len(pending)}: {label}...", expanded=True) as status:
+            try:
+                if item["type"] == "insight":
+                    result = _gen_deep_insight(item["context"], item["data"])
+                elif item["type"] == "summary":
+                    result = _gen_deep_summary(item["page_name"], item["kpi_data"], item.get("charts_data"))
+                elif item["type"] == "forecast":
+                    result = _gen_deep_forecast(item["model_name"], item["forecast_data"])
+                else:
+                    result = None
 
-            if result:
-                _save_cache(item["cache_key"], item["type"], result, data_date)
-        except Exception:
-            pass
+                if result:
+                    _save_cache(item["cache_key"], item["type"], result, data_date)
+                    st.markdown(result)
+                    status.update(label=f"✅ {i+1}/{len(pending)}: {label}", state="complete", expanded=False)
+                    completed += 1
+                else:
+                    status.update(label=f"⚠️ {i+1}/{len(pending)}: No result", state="error", expanded=False)
+            except Exception as e:
+                status.update(label=f"❌ {i+1}/{len(pending)}: Error", state="error", expanded=False)
 
-    progress.empty()
-    st.rerun()
+    if completed > 0:
+        st.success(f"✅ {completed} insights generated! Click below to see them in place.")
+        if st.button("🔄 Refresh Page", key="btn_refresh_after"):
+            st.rerun()
 
 
 # ─── Deep Analysis Generators ───────────────────────────────────────────

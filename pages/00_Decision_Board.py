@@ -15,6 +15,7 @@ from utils.auth import require_login, render_sidebar_user
 from utils.smart_table import render_smart_table
 from utils.ai_insights import render_insight_panel, render_page_summary, finish_page
 from utils.charts import horizontal_bar, bar_chart, STATUS_COLORS, apply_layout
+from utils.kpi_card import render_kpi, render_chart_source
 from models.decision_engine import (
     get_operating_modes, get_delivery_queue, get_cost_per_hour,
     get_weekly_budget_forecast, get_supplier_buy_signal,
@@ -42,21 +43,26 @@ if not modes_df.empty:
     mode_counts = modes_df["mode"].value_counts()
     mc1, mc2, mc3, mc4, mc5 = st.columns(5)
     with mc1:
-        ui.metric_card(title="🟢 FULL", content=str(mode_counts.get("FULL", 0)),
-                       description=">7 days fuel", key="mc_mode_full")
+        render_kpi("🟢 FULL", mode_counts.get("FULL", 0),
+                   "Sites where Days of Buffer ≥ 7. Buffer = Tank Balance ÷ Daily Usage",
+                   "daily_site_summary (latest date with most data)", "mc_mode_full", ">7 days fuel")
     with mc2:
-        ui.metric_card(title="🟡 REDUCED", content=str(mode_counts.get("REDUCED", 0)),
-                       description="3-7 days", key="mc_mode_reduced")
+        render_kpi("🟡 REDUCED", mode_counts.get("REDUCED", 0),
+                   "Sites where 3 ≤ Buffer < 7 days. Reduce operating hours to conserve fuel",
+                   "daily_site_summary", "mc_mode_reduced", "3-7 days")
     with mc3:
-        ui.metric_card(title="🟠 GEN ONLY", content=str(mode_counts.get("GENERATOR_ONLY", 0)),
-                       description="1-3 days", key="mc_mode_gen")
+        render_kpi("🟠 GEN ONLY", mode_counts.get("GENERATOR_ONLY", 0),
+                   "Sites where 1 ≤ Buffer < 3 days. Essential services only",
+                   "daily_site_summary", "mc_mode_gen", "1-3 days")
     with mc4:
-        ui.metric_card(title="🔴 CLOSE", content=str(mode_counts.get("CLOSE", 0)),
-                       description="<1 day", key="mc_mode_close")
+        render_kpi("🔴 CLOSE", mode_counts.get("CLOSE", 0),
+                   "Sites where Buffer < 1 day. Recommend temporary closure",
+                   "daily_site_summary", "mc_mode_close", "<1 day fuel")
     with mc5:
         total_daily_cost = modes_df["daily_fuel_cost"].sum()
-        ui.metric_card(title="💰 Daily Cost", content=f"{total_daily_cost:,.0f}",
-                       description="MMK total fuel", key="mc_daily_cost")
+        render_kpi("💰 Daily Cost", f"{total_daily_cost:,.0f} MMK",
+                   "SUM(Daily Usage × Latest Fuel Price) for each site. Price from fuel_purchases table",
+                   "daily_site_summary × fuel_purchases (latest price per sector)", "mc_daily_cost")
 
     # Mode table
     display = modes_df[["site_id", "sector_id", "mode", "days_of_buffer",
@@ -64,6 +70,9 @@ if not modes_df.empty:
     display.columns = ["Site", "Sector", "Mode", "Buffer Days", "Tank (L)", "Daily Use (L)", "Daily Cost (MMK)", "Action"]
     render_smart_table(display, title="Operating Mode Recommendations", severity_col="Mode",
                        highlight_cols={"Buffer Days": {"good": "high", "thresholds": [7, 3]}})
+    render_chart_source("Operating Modes",
+                        "Mode = FULL if buffer≥7, REDUCED if 3-7, GEN_ONLY if 1-3, CLOSE if <1. Daily Cost = Daily Usage × Latest Sector Fuel Price",
+                        "Tables: daily_site_summary, generators, fuel_purchases | Engine: models/decision_engine.py → get_operating_modes()")
 
     render_insight_panel("Site operating mode recommendations — which outlets to run, reduce, or close today", display, "decision_modes")
 
@@ -95,6 +104,9 @@ if not queue_df.empty:
                           "Need (L)", "Deliver By", "Cost (MMK)"]
     render_smart_table(q_display, title="Delivery Queue", severity_col="Urgency",
                        highlight_cols={"Buffer Days": {"good": "high", "thresholds": [3, 1]}})
+    render_chart_source("Delivery Queue",
+                        "Need (L) = (7 × Daily Usage) - Current Balance. Urgency: IMMEDIATE if <1 day, TODAY if <2, TOMORROW if <3. Cost = Need × Latest Price",
+                        "Tables: daily_site_summary, fuel_purchases | Engine: get_delivery_queue()")
 
     render_insight_panel("Fuel delivery priority queue — where to send trucks first", q_display, "decision_delivery")
 else:
