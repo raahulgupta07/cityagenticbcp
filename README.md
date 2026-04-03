@@ -15,11 +15,11 @@ Myanmar faces frequent power outages. Organizations with 55+ outlets need to dec
 
 ## The Solution
 
-A single dashboard that answers all these questions with AI-powered analysis. Database starts empty — upload your own Excel data via the Data Entry page.
+A single dashboard that answers all these questions with AI-powered analysis. Database starts empty -- upload your own Excel data via the Data Entry page.
 
 ## Features
 
-### Daily Decision Board (the #1 page)
+### Command Center (the #1 page)
 | Feature | What It Does |
 |---|---|
 | Operating Mode | Recommends FULL/REDUCED/GEN-ONLY/CLOSE per site |
@@ -33,31 +33,22 @@ A single dashboard that answers all these questions with AI-powered analysis. Da
 | Recovery Estimate | How fast sites restart after grid power returns |
 | What-If Simulator | "What if diesel hits 10,000 MMK?" |
 
-### Sales vs Energy Analysis (Page 12)
+### Store Economics (Sales vs Energy)
 | Feature | What It Does |
 |---|---|
-| Energy % of Sales | Core KPI — energy cost as percentage of revenue per sector |
-| Sector Comparison | CP vs CMHL vs CFC side-by-side bars and tables |
-| Energy Deep Dive | All BCP sites sorted by energy cost, expandable per-generator detail |
-| Sales Deep Dive | Top revenue and margin sites from POS data |
-| Hourly Analysis | Peak sales hours vs generator run hours |
-| Store Decision | Colored recommendation cards: FULL/MONITOR/REDUCE/CLOSE per sector |
-| Daily Trend | Energy cost % over time with threshold lines |
+| Diesel % of Sales | Core KPI -- diesel cost as percentage of revenue per site |
+| Per-Site Profitability | Total diesel cost, total sales, margin, recommendation |
+| LY Comparison | Current diesel expense vs last 12-month average |
+| Sector Pivot | Daily diesel cost, sales, and diesel % by sector and date |
 
-### 13 Dashboard Pages
-1. **Decision Board** — daily operating decisions
-2. **Sector Overview** — compare CP vs CMHL vs CFC
-3. **Site Detail** — drill into any site's generators
-4. **Fuel Price** — price trends, supplier comparison, 7-day forecast
-5. **Buffer Risk** — stockout predictions, critical sites
-6. **Power Backup** — generator run hours as blackout proxy
-7. **Generator Fleet** — efficiency scoring, anomalies
-8. **BCP Command Center** — complete risk overview with scores A-F
-9. **AI Insights** — chat agent, deep analysis, alerts
-10. **Data Entry** — upload Excel files, browse raw data
-11. **Settings** — email configuration, user management
-12. **Data Quality** — automated spec validation, reporting gaps, anomaly detection
-13. **Sales vs Energy** — energy expense vs sales revenue profitability
+### Dashboard Pages
+1. **Command Center** -- CEO daily view: survival KPIs, operating modes, delivery queue, budget, alerts
+2. **Store Economics** -- per-site diesel cost vs sales revenue, profitability recommendation
+3. **Fuel Price** -- price trends, supplier comparison, 7-day forecast, buy signal
+4. **Operations** -- delivery queue, theft detection, generator load optimization
+5. **AI Insights** -- chat agent with 15 tools, deep analysis
+6. **Data Entry** -- upload Excel files, auto-detect, validate, import with live preview
+7. **Settings** -- user management, SMTP email configuration
 
 ### 5 ML Models
 | Model | Algorithm | Purpose |
@@ -78,7 +69,7 @@ A single dashboard that answers all these questions with AI-powered analysis. Da
 ### Authentication & Roles
 | Role | Access |
 |---|---|
-| Super Admin | Everything — settings, users, upload, analysis |
+| Super Admin | Everything -- settings, users, upload, analysis |
 | Admin | Upload data, run analysis, manage recipients |
 | User | View dashboards only (read-only) |
 
@@ -116,27 +107,47 @@ streamlit run app.py
 
 ## Data Input
 
-Database starts **empty** — upload your Excel files via the Data Entry page. The system auto-detects file types by reading sheet names inside each file. File names don't matter.
+Database starts **empty** -- upload your Excel files via the Data Entry page. The system auto-detects file types by reading sheet names inside each file. File names don't matter.
 
-### Supported File Types (up to 7 files)
+### Supported File Types
 | File | Sheet Name(s) | Purpose |
 |---|---|---|
-| Blackout Hr_ CP.xlsx | `CP` | City Pharmacy generator + fuel data |
+| Blackout Hr_ CP.xlsx | `CP` | City Properties generator + fuel data |
 | Blackout Hr_ CMHL.xlsx | `CMHL` | City Mart Holdings generator + fuel data |
 | Blackout Hr_ CFC.xlsx | `CFC` | City Food Concepts generator + fuel data |
 | Daily Fuel Price.xlsx | `CMHL, CP, CFC, PG` | Fuel purchase prices per sector |
-| daily sales data.xlsx | `daily sales` | Daily sales per site per brand |
-| hourly sales data.xlsx | `hourly sales` | Hourly sales with transaction counts |
-| storemaster.xlsx | `STORE MASTER` | Store reference data (segment, location, size) |
+| CMHL_DAILY_SALES.xlsx | `daily sales, hourly sales, STORE MASTER, mapping` | All-in-one combo sales file |
+| Daily Avg Diesel Expense LY.xlsx | `CMHL, CP, CFC` | Last year diesel expense baseline |
+
+### Combo Sales File Format (CMHL_DAILY_SALES.xlsx)
+| Sheet | Columns | Purpose |
+|---|---|---|
+| daily sales | SALES_DATE, GOLD_CODE, CostCenter, SegmentName, SALES_AMT, MARGIN | Daily sales per store per segment |
+| hourly sales | DocumentDate, Sales_HR, GOLD_CODE, CostCenter, SegmentName, TotalAmount | Hourly sales breakdown |
+| STORE MASTER | 53 columns (GOLD_Code, CostCenter, CostCenterName, SegmentName, Lat/Lng, etc.) | Store reference data |
+| mapping | Manual Data, SAP Cost Center Name, SITE_CODE | BCP site name to GOLD_CODE reference |
+
+### Sales-to-BCP Matching (CostCenter Direct Match)
+
+Sales data is matched to BCP (blackout) sites using **CostCenter code** as the direct join key:
+
+```
+Blackout Excel  -->  sites.cost_center_code (e.g. 1100007)
+Sales Excel     -->  CostCenter column      (e.g. 1100007)
+                     Direct match = site_id resolved
+```
+
+**No mapping tables or JOINs needed.** The `site_id` is stored directly in `daily_sales` at import time. Backfill runs after every upload, so upload order doesn't matter.
 
 ### What the parser handles automatically:
-- Generator name typos (KHOLER→KOHLER, HIMONISA→HIMOINSA)
+- Generator name typos (KHOLER to KOHLER, HIMONISA to HIMOINSA)
 - Dynamic columns (new days = new columns, auto-detected)
-- Dashes, blanks, #DIV/0!, text notes → cleaned to NULL
-- Multi-generator sites → aggregated correctly
+- Dashes, blanks, #DIV/0!, text notes cleaned to NULL
+- Multi-generator sites aggregated correctly
 - Validation: rejects gen hours > 24, keeps rest of data
-- Brand→Sector mapping for sales data (auto-resolved)
-- Store segment→sector mapping from storemaster
+- GOLD_CODE and CostCenter as site identifiers (new format)
+- SegmentName to sector mapping (City Mart to CMHL, City Care to CP, etc.)
+- TotalAmount column for hourly sales (new format)
 
 ## Environment Variables
 
@@ -154,8 +165,8 @@ SUPER_ADMIN_EMAIL=admin@company.com
 
 | Layer | Technology |
 |---|---|
-| Frontend | Streamlit + streamlit-shadcn-ui + Plotly |
-| Database | SQLite (WAL mode) |
+| Frontend | Streamlit + streamlit-shadcn-ui + Plotly + ECharts |
+| Database | SQLite (WAL mode, 20 tables) |
 | ML | scikit-learn (Ridge, Isolation Forest, Gradient Boosting) |
 | AI | Claude Haiku 4.5 via OpenRouter |
 | Auth | Session tokens in DB + URL params |
@@ -165,75 +176,78 @@ SUPER_ADMIN_EMAIL=admin@company.com
 ## Project Structure
 
 ```
-├── app.py                      # Home page
-├── config/settings.py          # All configuration, thresholds, brand/sector maps
-├── db/                         # SQLite database (empty on first run)
-├── utils/
-│   ├── database.py             # 19 tables, WAL mode, CRUD
-│   ├── auth.py                 # Login, roles, persistent sessions
-│   ├── ai_insights.py          # Deep AI analysis, DB-cached
-│   ├── llm_client.py           # OpenRouter + Anthropic client
-│   ├── email_sender.py         # SMTP email alerts
-│   ├── charts.py               # 12 Plotly chart builders
-│   ├── smart_table.py          # HTML tables with severity badges
-│   ├── kpi_card.py             # KPI cards with calculation transparency
-│   └── page_header.py          # Consistent gradient headers
-├── parsers/
-│   ├── blackout_parser.py      # Dynamic Excel column detection
-│   ├── fuel_price_parser.py    # 4-sheet price parser
-│   ├── name_normalizer.py      # Generator name typo fixing
-│   ├── sales_parser.py         # Daily + hourly sales parser
-│   └── storemaster_parser.py   # Store master reference parser
-├── models/
-│   ├── decision_engine.py      # 15 Tier 1-3 predictions + energy awareness
-│   ├── energy_cost.py          # Energy vs sales: breakdown, decision matrix
-│   ├── fuel_price_forecast.py  # Ridge regression, 7-day forecast
-│   ├── buffer_predictor.py     # Exponential smoothing, stockout
-│   ├── efficiency_scorer.py    # Isolation Forest anomalies
-│   ├── bcp_engine.py           # Weighted composite BCP scores
-│   └── blackout_predictor.py   # Gradient Boosting classifier
-├── agents/
-│   ├── chat_agent.py           # Tool-calling AI chat
-│   └── tools/                  # 15 registered tools (9 data + 6 ML)
-├── alerts/
-│   └── alert_engine.py         # 11 alert conditions (incl. energy cost)
-├── pages/                      # 13 dashboard pages (00-12)
-├── Dockerfile
-├── compose.yaml
-└── seed_database.py            # One-time seed script (optional, for dev)
+app.py                          # Home page
+config/settings.py              # All configuration, thresholds, segment/sector maps
+db/                             # SQLite database (empty on first run)
+utils/
+  database.py                   # 20 tables, WAL mode, CRUD, auto-migration
+  auth.py                       # Login, roles, persistent sessions
+  ai_insights.py                # Deep AI analysis, DB-cached
+  llm_client.py                 # OpenRouter + Anthropic client
+  email_sender.py               # SMTP email alerts
+  charts.py                     # 12 Plotly chart builders
+  echarts.py                    # ECharts chart builders
+  smart_table.py                # HTML tables with severity badges
+  kpi_card.py                   # KPI cards with calculation transparency
+  page_header.py                # Consistent gradient headers
+parsers/
+  blackout_parser.py            # Dynamic Excel column detection
+  fuel_price_parser.py          # 4-sheet price parser
+  name_normalizer.py            # Generator name typo fixing
+  sales_parser.py               # Daily + hourly sales (GOLD_CODE, CostCenter, SegmentName)
+  storemaster_parser.py         # Store master reference parser
+  diesel_expense_parser.py      # LY diesel expense baseline parser
+models/
+  decision_engine.py            # 15 Tier 1-3 predictions + energy awareness
+  energy_cost.py                # Store economics: direct site_id query, no JOINs
+  fuel_price_forecast.py        # Ridge regression, 7-day forecast
+  buffer_predictor.py           # Exponential smoothing, stockout
+  efficiency_scorer.py          # Isolation Forest anomalies
+  bcp_engine.py                 # Weighted composite BCP scores
+  blackout_predictor.py         # Gradient Boosting classifier
+agents/
+  chat_agent.py                 # Tool-calling AI chat
+  tools/                        # 15 registered tools (9 data + 6 ML)
+alerts/
+  alert_engine.py               # 11 alert conditions (incl. energy cost)
+pages/                          # Dashboard pages
+Dockerfile
+docker-compose.yml
+seed_database.py                # One-time seed script (optional, for dev)
 ```
 
-## Database Schema (19 tables)
+## Database Schema (20 tables)
 
 | Table | Purpose |
 |---|---|
 | users | Authentication + roles |
-| sessions | Persistent login tokens |
 | sectors | CP, CMHL, CFC, PG |
-| sites | Outlet locations |
+| sites | BCP outlet locations (with cost_center_code from blackout) |
 | generators | Generator models per site |
 | daily_operations | Per-generator per-day fact table |
-| daily_site_summary | Aggregated: buffer days, totals |
+| daily_site_summary | Materialized view: buffer days, totals |
 | fuel_purchases | Diesel prices from suppliers |
-| store_master | Sales system store reference (segment, location) |
-| daily_sales | Daily sales per site per brand |
-| hourly_sales | Hourly sales with transaction counts |
-| site_sales_map | Optional: maps sales sites to BCP sites |
+| store_master | Sales system store reference (GOLD_Code, CostCenter, segment) |
+| daily_sales | Daily sales per site (with site_id resolved via CostCenter) |
+| hourly_sales | Hourly sales (with site_id resolved via CostCenter) |
+| site_sales_map | Legacy mapping table (kept for backward compat) |
+| diesel_expense_ly | Last year diesel expense baseline |
 | alerts | Auto-generated threshold alerts |
 | alert_recipients | Email notification targets |
 | email_log | Delivery audit trail |
 | app_settings | SMTP config, preferences |
 | ai_insights_cache | Persisted AI analysis |
 | upload_history | File import audit |
-| generator_name_map | Typo → canonical name mapping |
+| generator_name_map | Typo to canonical name mapping |
+| incidents | Manual incident logging |
 
 ## Energy Cost Thresholds
 
-| Energy % of Sales | Status | Recommendation |
+| Diesel % of Sales | Status | Recommendation |
 |---|---|---|
 | < 5% | HEALTHY | Full operations |
 | 5-15% | MONITOR | Review generator schedules |
-| 15-30% | REDUCE | Cut generator hours by 20% |
+| 15-30% | REDUCE | Cut generator hours |
 | 30-60% | CRITICAL | Essential hours only |
 | > 60% | CLOSE | Temporary closure recommended |
 
