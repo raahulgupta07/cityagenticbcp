@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+:root {
+	--surface: #feffd6;
+	--surface-container-lowest: #ffffff;
+	--surface-container-low: #fcf9ef;
+	--surface-container: #f6f4e9;
+	--surface-container-high: #f1eee3;
+	--surface-container-highest: #ebe8dd;
+	--on-surface: #383832;
+	--on-background: #383832;
+	--primary: #007518;
+	--primary-container: #00fc40;
+	--secondary: #006f7c;
+	--secondary-container: #26e6ff;
+	--tertiary: #9d4867;
+	--tertiary-container: #fe97b9;
+	--error: #be2d06;
+	--error-container: #f95630;
+	--outline: #828179;
+	--outline-variant: #bbb9b1;
+}
+
+body {
+	background: var(--surface);
+	color: var(--on-surface);
+	font-family: 'Space Grotesk', sans-serif;
+}
+
+.font-headline { font-family: 'Space Grotesk', sans-serif; }
+
+.material-symbols-outlined {
+	font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+	vertical-align: middle;
+}
+
+/* Ink border: asymmetric 2px/3px */
+.ink-border {
+	border-bottom-width: 3px;
+	border-right-width: 3px;
+	border-left-width: 2px;
+	border-top-width: 2px;
+	border-style: solid;
+	border-color: var(--on-background);
+}
+
+/* Stamp shadow */
+.stamp-shadow {
+	box-shadow: 4px 4px 0px 0px var(--on-background);
+}
+
+/* Active tab style */
+.tab-active {
+	background-color: var(--on-background);
+	color: var(--surface);
+}
+
+/* Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 8px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: var(--surface-container); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--on-background); }
+
+/* Form inputs */
+input, select, textarea {
+	font-family: 'Space Grotesk', sans-serif;
+	color-scheme: light;
+}
+
+input::placeholder { color: var(--outline); }
+
+/* Remove all rounded corners */
+* { border-radius: 0px !important; }
+
+/* Selection */
+::selection { background: var(--primary); color: white; }
+
+/* Mobile table scroll indicator */
+.overflow-x-auto {
+	-webkit-overflow-scrolling: touch;
+}
+.overflow-x-auto::-webkit-scrollbar {
+	height: 4px;
+}
+.overflow-x-auto::-webkit-scrollbar-track {
+	background: #ebe8dd;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb {
+	background: #383832;
+	border-radius: 2px;
+}
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+	from { transform: translateX(100%); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+.animate-slide-in {
+	animation: slide-in 0.3s ease-out;
+}
+
+/* Skeleton loading pulse */
+@keyframes skeleton-pulse {
+	0%, 100% { opacity: 0.4; }
+	50% { opacity: 0.7; }
+}
+.skeleton {
+	background: #ebe8dd;
+	animation: skeleton-pulse 1.5s ease-in-out infinite;
+	border-radius: 2px;
+}
+
+/* Mobile responsive utilities */
+@media (max-width: 640px) {
+	.text-3xl { font-size: 1.5rem; }
+	.text-2xl { font-size: 1.25rem; }
+	[style*="height:380px"] { height: 280px !important; }
+	[style*="height:350px"] { height: 260px !important; }
+	[style*="height:300px"] { height: 220px !important; }
+}

@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: bcp-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - bcp-db:/app/db
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - SUPER_ADMIN_USER=${SUPER_ADMIN_USER:-admin}
+      - SUPER_ADMIN_PASS=${SUPER_ADMIN_PASS:-admin123}
+      - JWT_SECRET=${JWT_SECRET:-citybcp-secret-change-me}
+    healthcheck:
+      test: curl --fail http://localhost:8000/api/health || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: bcp-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - PUBLIC_API_URL=http://backend:8000/api
+
+volumes:
+  bcp-db:

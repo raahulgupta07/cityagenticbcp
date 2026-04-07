@@ -207,14 +207,13 @@ def parse_blackout_file(filepath, sector_id):
 
     # ─── Step 5: Parse each data row ─────────────────────────────────────
     seen_generators = set()
+    gen_name_count = {}    # (site_id, model_name_raw) → count — to differentiate same-model gens
     last_site_code = None    # Short code or name (carry forward for merged cells)
     last_site_full_name = None  # Cost Center Name (carry forward)
     last_cost_center_code = None  # Cost Center Code (carry forward)
     last_site_type = "Regular"
     last_business_sector = None  # Business sector from Excel col (carry forward)
     last_company = None          # Company from Excel col (carry forward)
-    _merged_tank = {}      # (site_id, date) → tank_balance
-    _merged_blackout = {}  # (site_id, date) → blackout_hr
 
     # Resolve cost code column
     COL_COST_CODE = static_cols.get("cost_code")
@@ -224,13 +223,25 @@ def parse_blackout_file(filepath, sector_id):
     for row_idx in range(data_start_row, ws.max_row + 1):
         seq_val = ws.cell(row=row_idx, column=COL_SEQ).value
 
-        # Skip non-data rows
+        # For merged seq cells (None), check if this is a real generator row
+        # or a subtotal/empty row. Subtotal rows have seq=None AND site=None.
         if seq_val is None:
-            continue
-        try:
-            int(float(str(seq_val)))
-        except (ValueError, TypeError):
-            continue
+            # Must have a site/store code or model to be a generator row
+            # (subtotal rows have formulas in date cols but no site/model)
+            site_check = ws.cell(row=row_idx, column=COL_SITE).value
+            model_check = ws.cell(row=row_idx, column=COL_MODEL).value if COL_MODEL else None
+            has_identity = False
+            if site_check and str(site_check).strip() not in ("", "-", "None"):
+                has_identity = True
+            if model_check and str(model_check).strip() not in ("", "-", "None", "UNKNOWN"):
+                has_identity = True
+            if not has_identity:
+                continue  # subtotal or empty row — skip
+        else:
+            try:
+                int(float(str(seq_val)))
+            except (ValueError, TypeError):
+                continue  # header or label row
 
         # Read static columns — handle merged cells by carrying forward
         # Business sector + company (carry forward for merged cells)
@@ -264,9 +275,13 @@ def parse_blackout_file(filepath, sector_id):
         if not last_site_code:
             continue
 
-        # Prefix site_id with sector to avoid cross-sector collisions
-        # e.g., CP-CM19, CMHL-CMJS, CFC-SBFTY
-        site_id = f"{sector_id}-{last_site_code}"
+        # Use cost_center_code as site_id (universal PK+FK)
+        # Fallback to sector-prefixed short code if no cost_center_code
+        site_code = f"{sector_id}-{last_site_code}"  # display label
+        if last_cost_center_code:
+            site_id = last_cost_center_code
+        else:
+            site_id = site_code
         site_name = last_site_full_name if has_separate_name and last_site_full_name else last_site_code
         site_type = last_site_type
 
@@ -301,24 +316,38 @@ def parse_blackout_file(filepath, sector_id):
         if COL_CONSUMPTION:
             consumption_per_hour = clean_numeric(ws.cell(row=row_idx, column=COL_CONSUMPTION).value)
 
-        # Store generator info (deduplicate by site + raw model name)
-        gen_key = (site_id, model_name_raw)
+        # Store generator info — differentiate same-model generators at same site
+        base_gen_key = (site_id, model_name_raw)
+        if base_gen_key in gen_name_count:
+            gen_name_count[base_gen_key] += 1
+            # Append suffix to differentiate: POWER MAX-500 → POWER MAX-500-G2
+            unique_model_raw = f"{model_name_raw}-G{gen_name_count[base_gen_key]}"
+            unique_model = f"{model_name}-G{gen_name_count[base_gen_key]}"
+        else:
+            gen_name_count[base_gen_key] = 1
+            unique_model_raw = model_name_raw
+            unique_model = model_name
+
+        gen_key = (site_id, unique_model_raw)
         if gen_key not in seen_generators:
             seen_generators.add(gen_key)
             result["generators"].append({
                 "site_id": site_id,
+                "site_code": site_code,
                 "site_name": site_name,
                 "site_type": site_type if site_type != "None" else "Regular",
                 "cost_center_code": last_cost_center_code,
                 "business_sector": last_business_sector,
                 "company": last_company,
-                "model_name": model_name,
-                "model_name_raw": model_name_raw,
+                "model_name": unique_model,
+                "model_name_raw": unique_model_raw,
                 "power_kva": power_kva,
                 "consumption_per_hour": consumption_per_hour,
                 "fuel_type": fuel_type,
                 "supplier": supplier,
             })
+        # Track unique model name for daily_data rows
+        _current_unique_model_raw = unique_model_raw
 
         # ─── Read daily data for each date column ────────────────────
         for date_str, date_col_start in date_columns:
@@ -329,44 +358,22 @@ def parse_blackout_file(filepath, sector_id):
             if has_blackout and "blackout_hr" in date_sub_offsets:
                 blackout_raw = clean_numeric(ws.cell(row=row_idx, column=date_col_start + OFF_BLACKOUT).value)
 
-            # Tank balance and blackout are SITE-LEVEL values (merged across generators).
-            # Store them ONLY on the first generator row that has the value.
-            # Other generator rows at the same site get None to avoid double-counting
-            # when someone does SUM() across the raw daily_operations table.
-            cache_key = (site_id, date_str)
+            # Store ALL values as-is per generator row.
+            # Summary uses SUM to match Excel's SUM() formula.
+            # Tank: each gen row can have its own drum/tank balance.
+            # Blackout: filled on first gen row only per instructions.
+            tank_balance = tank_balance_raw
+            blackout = blackout_raw
 
-            if tank_balance_raw is not None:
-                # First row with the value — record it
-                if cache_key not in _merged_tank:
-                    _merged_tank[cache_key] = tank_balance_raw
-                    tank_balance = tank_balance_raw
-                else:
-                    # Already stored on a previous generator row — don't duplicate
-                    tank_balance = None
-            else:
-                # Merged cell (None from openpyxl) — check if first row already stored it
-                if cache_key not in _merged_tank:
-                    tank_balance = None  # genuinely missing
-                else:
-                    tank_balance = None  # already stored on first gen row
-
-            if blackout_raw is not None:
-                if cache_key not in _merged_blackout:
-                    _merged_blackout[cache_key] = blackout_raw
-                    blackout = blackout_raw
-                else:
-                    blackout = None
-            else:
-                if cache_key not in _merged_blackout:
-                    blackout = None
-                else:
-                    blackout = None
-
-            # Skip row-date if no generator-level data AND no site-level data
-            if all(v is None for v in [gen_run_hr, daily_used, tank_balance, blackout]):
-                # But still keep the row if gen_run_hr or daily_used has data
-                # (a generator with 0 run hours is still valid data)
+            # Skip ONLY if ALL raw values were None (truly empty date column)
+            # This prevents creating zero-rows for future dates with no data
+            if all(v is None for v in [gen_run_hr, daily_used, tank_balance_raw, blackout_raw]):
                 continue
+            # For rows where at least one value exists, treat missing gen/fuel as 0
+            if gen_run_hr is None:
+                gen_run_hr = 0
+            if daily_used is None:
+                daily_used = 0
 
             # Validate
             warnings_for_row = []
@@ -407,7 +414,7 @@ def parse_blackout_file(filepath, sector_id):
 
             result["daily_data"].append({
                 "site_id": site_id,
-                "model_name_raw": model_name_raw,
+                "model_name_raw": _current_unique_model_raw,
                 "date": date_str,
                 "gen_run_hr": gen_run_hr,
                 "daily_used_liters": daily_used,

@@ -41,8 +41,8 @@ def parse_daily_sales_file(filepath, sheet_name=None):
         result["errors"].append("Could not find required columns (date, site name or site code or GOLD_CODE)")
         return result
 
-    # Prefer Site Code (GOLD_CODE) > CostCenter > Site Name
-    site_col = cols.get("site_code", cols.get("cost_center", cols.get("site")))
+    # Prefer CostCenter (matches sites.cost_center_code) > GOLD_CODE > Site Name
+    site_col = cols.get("cost_center", cols.get("site_code", cols.get("site")))
     has_segment = "segment" in cols
 
     dates_seen = []
@@ -137,8 +137,8 @@ def parse_hourly_sales_file(filepath, sheet_name=None):
         result["errors"].append("Could not find required columns (date, site name or site code or GOLD_CODE)")
         return result
 
-    # Prefer Site Code (GOLD_CODE) > CostCenter > Site Name
-    site_col = cols.get("site_code", cols.get("cost_center", cols.get("site")))
+    # Prefer CostCenter (matches sites.cost_center_code) > GOLD_CODE > Site Name
+    site_col = cols.get("cost_center", cols.get("site_code", cols.get("site")))
     has_segment = "segment" in cols
 
     dates_seen = []
@@ -223,7 +223,7 @@ def _detect_columns(df, mode="daily"):
             cols["site_code"] = col
         elif "goldcode" in cl:
             cols["site_code"] = col  # GOLD_CODE → site identifier
-        elif "costcenter" in cl and "site_code" not in cols:
+        elif "costcenter" in cl:
             cols["cost_center"] = col
         elif cl == "brand":
             cols["brand"] = col

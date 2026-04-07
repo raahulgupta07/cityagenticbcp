@@ -37,3 +37,6 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+backend/bcp.db
+Data2/
+*.xlsx

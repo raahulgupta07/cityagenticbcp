@@ -38,16 +38,17 @@ def get_store_economics(date_from=None, date_to=None):
         # 1. All BCP sites with energy data (BASE) — include date range + tank
         energy_q = """
             SELECT dss.site_id, s.sector_id, s.site_name,
+                   s.business_sector, s.company, s.cost_center_code, s.site_type,
                    SUM(dss.total_daily_used) as total_liters,
                    SUM(dss.total_gen_run_hr) as total_gen_hours,
                    COUNT(DISTINCT dss.date) as energy_days,
                    MIN(dss.date) as energy_start,
                    MAX(dss.date) as energy_end,
-                   AVG(dss.total_daily_used) as avg_daily_liters,
+                   SUM(dss.total_daily_used) * 1.0 / COUNT(DISTINCT dss.date) as avg_daily_liters,
                    MAX(CASE WHEN dss.date = (SELECT MAX(d2.date) FROM daily_site_summary d2 WHERE d2.site_id = dss.site_id)
                        THEN dss.spare_tank_balance END) as diesel_available,
-                   MAX(CASE WHEN dss.date = (SELECT MAX(d2.date) FROM daily_site_summary d2 WHERE d2.site_id = dss.site_id)
-                       THEN dss.days_of_buffer END) as latest_buffer_days
+                   -- Buffer placeholder (will be recalculated with blackout-based method)
+                   NULL as latest_buffer_days
             FROM daily_site_summary dss
             JOIN sites s ON dss.site_id = s.site_id
             WHERE 1=1
@@ -64,6 +65,47 @@ def get_store_economics(date_from=None, date_to=None):
 
         if df.empty:
             return df
+
+        # Buffer = Tank ÷ (Last 7-day avg blackout hr × Rated L/hr)
+        # Get last 7 days avg blackout per site + total rated consumption per site
+        buffer_q = """
+            SELECT sub.site_id,
+                   sub.avg_bo_7d,
+                   COALESCE(gc.total_rated_lph, 0) as total_rated_lph,
+                   CASE WHEN sub.avg_bo_7d > 0 AND gc.total_rated_lph > 0 THEN
+                       sub.avg_bo_7d * gc.total_rated_lph
+                   ELSE 0 END as est_daily_burn
+            FROM (
+                SELECT bo.site_id,
+                       SUM(bo.max_bo) * 1.0 / COUNT(DISTINCT bo.date) as avg_bo_7d
+                FROM (
+                    SELECT site_id, date, MAX(blackout_hr) as max_bo
+                    FROM daily_operations
+                    WHERE blackout_hr IS NOT NULL
+                      AND date >= (SELECT date(MAX(date), '-6 days') FROM daily_site_summary)
+                    GROUP BY site_id, date
+                ) bo
+                GROUP BY bo.site_id
+            ) sub
+            LEFT JOIN (
+                SELECT site_id, SUM(consumption_per_hour) as total_rated_lph
+                FROM generators WHERE is_active = 1
+                GROUP BY site_id
+            ) gc ON sub.site_id = gc.site_id
+        """
+        buf_df = pd.read_sql_query(buffer_q, conn)
+        if not buf_df.empty:
+            buf_map = dict(zip(buf_df["site_id"], buf_df["est_daily_burn"]))
+            bo_map = dict(zip(buf_df["site_id"], buf_df["avg_bo_7d"]))
+            df["est_daily_burn_bo"] = df["site_id"].map(buf_map).fillna(0)
+            df["avg_blackout_7d"] = df["site_id"].map(bo_map).fillna(0)
+            df["latest_buffer_days"] = df.apply(
+                lambda r: round(r["diesel_available"] / r["est_daily_burn_bo"], 1)
+                if pd.notna(r["diesel_available"]) and r["est_daily_burn_bo"] > 0
+                else None, axis=1)
+        else:
+            df["est_daily_burn_bo"] = 0
+            df["avg_blackout_7d"] = 0
 
         # 2. Generator count per site
         gen_counts = pd.read_sql_query("""
@@ -675,7 +717,7 @@ def get_site_energy_breakdown(sector_id=None, date_from=None, date_to=None):
                    SUM(dss.total_daily_used) as total_liters,
                    SUM(dss.total_gen_run_hr) as total_gen_hours,
                    COUNT(DISTINCT dss.date) as days_tracked,
-                   AVG(dss.total_daily_used) as avg_daily_liters
+                   SUM(dss.total_daily_used) * 1.0 / COUNT(DISTINCT dss.date) as avg_daily_liters
             FROM daily_site_summary dss
             JOIN sites s ON dss.site_id = s.site_id
             WHERE dss.total_daily_used > 0

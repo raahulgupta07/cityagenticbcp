@@ -259,8 +259,9 @@ AGENT_CONFIG = {
     "enabled": os.environ.get("BCP_AGENT_ENABLED", "true").lower() == "true",
     "api_key_env": "OPENROUTER_API_KEY",
     "models": {
-        "reasoning": "anthropic/claude-haiku-4.5",
-        "fast": "anthropic/claude-haiku-4.5",
+        "reasoning": "google/gemini-3.1-flash-lite-preview",
+        "fast": "google/gemini-3.1-flash-lite-preview",
+        "insight": "google/gemini-3.1-flash-lite-preview",
     },
     "max_turns": 10,
     "max_tokens": 4096,

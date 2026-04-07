@@ -345,6 +345,19 @@ def init_db():
             ("sites", "region", "TEXT"),
             ("sites", "business_sector", "TEXT"),
             ("sites", "company", "TEXT"),
+            ("sites", "address", "TEXT"),
+            ("sites", "address_state", "TEXT"),
+            ("sites", "address_township", "TEXT"),
+            ("sites", "latitude", "REAL"),
+            ("sites", "longitude", "REAL"),
+            ("sites", "store_size", "TEXT"),
+            ("sites", "channel", "TEXT"),
+            ("sites", "manager", "TEXT"),
+            ("sites", "gold_code", "TEXT"),
+            ("sites", "open_date", "TEXT"),
+            ("sites", "closed_date", "TEXT"),
+            ("sites", "segment_name", "TEXT"),
+            ("sites", "cost_center_description", "TEXT"),
         ]:
             cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
             if col not in cols:
@@ -393,17 +406,44 @@ def _seed_diesel_expense_ly(conn):
 # ─── CRUD Helpers ────────────────────────────────────────────────────────────
 
 def upsert_site(conn, site_id, site_name, sector_id, site_type="Regular",
-                cost_center_code=None, business_sector=None, company=None):
+                cost_center_code=None, business_sector=None, company=None, site_code=None):
     conn.execute("""
-        INSERT INTO sites (site_id, site_name, sector_id, site_type, cost_center_code, business_sector, company)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sites (site_id, site_name, sector_id, site_type, cost_center_code, business_sector, company, region)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(site_id) DO UPDATE SET
             site_name = excluded.site_name,
             cost_center_code = COALESCE(excluded.cost_center_code, sites.cost_center_code),
             business_sector = COALESCE(excluded.business_sector, sites.business_sector),
             company = COALESCE(excluded.company, sites.company),
+            region = COALESCE(excluded.region, sites.region),
             updated_at = datetime('now')
-    """, (site_id, site_name, sector_id, site_type, cost_center_code, business_sector, company))
+    """, (site_id, site_name, sector_id, site_type, cost_center_code, business_sector, company, site_code))
+
+
+def enrich_sites_from_store_master(conn):
+    """Enrich sites table with store master data (address, lat/long, segment, description, etc.)
+
+    Join: sites.site_id = store_master.cost_center_code (since site_id IS cost_center_code now)
+    Also tries: sites.cost_center_code = store_master.cost_center_code (backward compat)
+    """
+    conn.execute("""
+        UPDATE sites SET
+            address = COALESCE(sites.address, sm.address),
+            address_state = COALESCE(sites.address_state, sm.address_state),
+            address_township = COALESCE(sites.address_township, sm.address_township),
+            latitude = COALESCE(sites.latitude, sm.latitude),
+            longitude = COALESCE(sites.longitude, sm.longitude),
+            store_size = COALESCE(sites.store_size, sm.store_size),
+            channel = COALESCE(sites.channel, sm.channel),
+            gold_code = COALESCE(sites.gold_code, sm.gold_code),
+            open_date = COALESCE(sites.open_date, sm.open_date),
+            closed_date = COALESCE(sites.closed_date, sm.closed_date),
+            segment_name = COALESCE(sites.segment_name, sm.segment_name),
+            cost_center_description = COALESCE(sites.cost_center_description, sm.cost_center_name)
+        FROM store_master sm
+        WHERE (sites.site_id = sm.cost_center_code OR sites.cost_center_code = sm.cost_center_code)
+          AND sm.cost_center_code IS NOT NULL
+    """)
 
 def upsert_generator(conn, site_id, model_name, model_name_raw, power_kva,
                       consumption_per_hour, fuel_type=None, supplier=None):
@@ -457,8 +497,8 @@ def refresh_site_summary(conn, site_id, date):
         SELECT
             COALESCE(SUM(gen_run_hr), 0) AS total_gen_run_hr,
             COALESCE(SUM(daily_used_liters), 0) AS total_daily_used,
-            MAX(spare_tank_balance) AS spare_tank_balance,
-            MAX(blackout_hr) AS blackout_hr,
+            COALESCE(SUM(spare_tank_balance), 0) AS spare_tank_balance,
+            COALESCE(SUM(blackout_hr), 0) AS blackout_hr,
             COUNT(CASE WHEN gen_run_hr > 0 THEN 1 END) AS num_generators_active
         FROM daily_operations
         WHERE site_id = ? AND date = ?
