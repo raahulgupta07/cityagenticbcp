@@ -15,12 +15,17 @@ security = HTTPBearer()
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "").strip()
 if not SECRET_KEY:
-    # Check if running in Docker (production)
-    if os.path.exists("/.dockerenv"):
-        raise RuntimeError("JWT_SECRET environment variable must be set in production! Generate with: openssl rand -hex 32")
-    import warnings
-    warnings.warn("JWT_SECRET not set — using insecure default. Set JWT_SECRET env var in production!")
-    SECRET_KEY = "citybcp-dev-only-secret-key-DO-NOT-USE-IN-PROD"
+    # Auto-generate and persist to db volume so it survives restarts
+    import secrets
+    from pathlib import Path
+    _secret_file = Path(os.environ.get("DATA_DIR", "db")) / ".jwt_secret"
+    _secret_file.parent.mkdir(parents=True, exist_ok=True)
+    if _secret_file.exists():
+        SECRET_KEY = _secret_file.read_text().strip()
+    if not SECRET_KEY:
+        SECRET_KEY = secrets.token_hex(32)
+        _secret_file.write_text(SECRET_KEY)
+        print(f"[AUTH] Auto-generated JWT_SECRET → saved to {_secret_file}")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
